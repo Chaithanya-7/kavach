@@ -34,6 +34,11 @@ Run `framework doctor` from an elevated PowerShell to see the Security event log
 | `framework doctor` | Read-only readiness checks (Python, Windows 11 build, admin, pywin32, Sysmon/Security/Defender logs, config, lab gate). Exit 1 on any FAIL |
 | `framework scenarios list [--layer L]` | List the non-destructive cross-layer scenario catalog |
 | `framework scenarios info SC-XXX` | Show one scenario's full definition |
+| `framework run --scenario SC-XXX / --profile P` | Execute a controlled scenario (lab-gated) — _pending Stage 3_ |
+| `framework train --episodes N` | Train the DQN agent — _pending Stage 5_ |
+| `framework evaluate --mode adaptive/random/fixed` | Evaluate a strategy — _pending Stage 6_ |
+| `framework analyze --run EXP-XXX` | Metrics + SHAP + K-means — _pending Stage 7_ |
+| `framework report --run EXP-XXX` | Exports + figures — _pending Stage 8_ |
 | `--config PATH`, `-v` | Alternate config (or `$env:FRAMEWORK_CONFIG`), verbose console logs |
 
 Logs: JSON lines in `outputs/logs/framework.jsonl`.

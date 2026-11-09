@@ -62,3 +62,52 @@ def test_invalid_config_exits_2(workspace):
     bad.write_text("unknown_key: 1\n")
     r = runner.invoke(app, ["--config", str(bad), "status"])
     assert r.exit_code == 2
+
+
+def _auth_cfg(workspace):
+    runner.invoke(app, ["init"])
+    cfg = workspace / "configs" / "framework.yaml"
+    cfg.write_text(cfg.read_text().replace("authorized: false", "authorized: true"))
+    return str(cfg)
+
+
+def test_run_requires_one_selector(workspace):
+    runner.invoke(app, ["init"])
+    assert runner.invoke(app, ["run"]).exit_code == 2
+    assert runner.invoke(app, ["run", "-s", "SC-001", "-p", "baseline"]).exit_code == 2
+
+
+def test_run_unknown_scenario(workspace):
+    runner.invoke(app, ["init"])
+    assert runner.invoke(app, ["run", "-s", "SC-999"]).exit_code == 2
+
+
+def test_run_refused_without_lab_auth(workspace):
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["run", "-s", "SC-001"])
+    assert r.exit_code == 2 and "Refused" in r.output
+
+
+def test_run_pending_when_authorized(workspace):
+    cfg = _auth_cfg(workspace)
+    r = runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
+    assert r.exit_code == 0 and "pending" in r.output
+
+
+def test_train_validates_and_pends(workspace):
+    runner.invoke(app, ["init"])
+    assert runner.invoke(app, ["train", "-e", "0"]).exit_code != 0  # min=1
+    r = runner.invoke(app, ["train", "-e", "5"])
+    assert r.exit_code == 0 and "pending" in r.output
+
+
+def test_evaluate_mode_validation(workspace):
+    runner.invoke(app, ["init"])
+    assert runner.invoke(app, ["evaluate", "-m", "stealth"]).exit_code == 2
+    assert runner.invoke(app, ["evaluate", "-m", "random"]).exit_code == 0
+
+
+def test_analyze_and_report_pend(workspace):
+    runner.invoke(app, ["init"])
+    assert "pending" in runner.invoke(app, ["analyze", "-r", "EXP-001"]).output
+    assert "pending" in runner.invoke(app, ["report", "-r", "EXP-001"]).output

@@ -130,6 +130,91 @@ def doctor(ctx: typer.Context) -> None:
         raise typer.Exit(code=1)
 
 
+def _pending(stage: str, what: str) -> None:
+    """Honest placeholder: the command is wired but its engine is not built yet."""
+    console.print(f"[yellow]pending[/yellow] — {what} is implemented in {stage}. No results were produced.")
+
+
+def _require_lab(loaded: LoadedConfig) -> None:
+    if not loaded.config.lab.authorized:
+        err_console.print(
+            "[red]Refused:[/red] lab.authorized is false. Set it to true in configs/framework.yaml only inside "
+            "an isolated, authorized Windows test VM."
+        )
+        raise typer.Exit(code=2)
+
+
+@app.command()
+def run(
+    ctx: typer.Context,
+    scenario: Optional[str] = typer.Option(None, "--scenario", "-s", help="Scenario id, e.g. SC-001."),
+    profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Named scenario profile, e.g. baseline."),
+) -> None:
+    """Execute a controlled scenario (or profile) and collect telemetry. [Stage 3]"""
+    loaded = _load(ctx)
+    if bool(scenario) == bool(profile):
+        err_console.print("[red]Provide exactly one of[/red] --scenario or --profile.")
+        raise typer.Exit(code=2)
+    if scenario:
+        try:
+            sc = get_scenario(scenario.upper())
+        except ScenarioError:
+            err_console.print(f"[red]Unknown scenario:[/red] {scenario}. Try 'framework scenarios list'.")
+            raise typer.Exit(code=2)
+        console.print(f"Selected [bold]{sc.id}[/bold] ({sc.layer.value}): {sc.name}")
+    else:
+        console.print(f"Selected profile [bold]{profile}[/bold]")
+    _require_lab(loaded)
+    _pending("Stage 3 (scenario execution) + Stage 4 (telemetry)", "controlled execution")
+
+
+@app.command()
+def train(
+    ctx: typer.Context,
+    episodes: int = typer.Option(100, "--episodes", "-e", min=1, help="Training episodes."),
+) -> None:
+    """Train the DQN scenario-selection agent against simulated feedback. [Stage 5]"""
+    _load(ctx)
+    console.print(f"Requested [bold]{episodes}[/bold] training episodes (simulated feedback, clearly labelled).")
+    _pending("Stage 5 (DQN)", "reinforcement-learning training")
+
+
+@app.command()
+def evaluate(
+    ctx: typer.Context,
+    mode: str = typer.Option("adaptive", "--mode", "-m", help="Selection strategy: adaptive | random | fixed."),
+) -> None:
+    """Evaluate a selection strategy end-to-end. [Stage 6]"""
+    _load(ctx)
+    if mode not in {"adaptive", "random", "fixed"}:
+        err_console.print("[red]--mode[/red] must be one of: adaptive, random, fixed.")
+        raise typer.Exit(code=2)
+    console.print(f"Evaluation mode [bold]{mode}[/bold].")
+    _pending("Stage 6 (adaptive orchestration)", "strategy evaluation")
+
+
+@app.command()
+def analyze(
+    ctx: typer.Context,
+    run_id: str = typer.Option(..., "--run", "-r", help="Experiment id, e.g. EXP-001."),
+) -> None:
+    """Run metrics, SHAP and K-means over a stored experiment. [Stage 7]"""
+    _load(ctx)
+    console.print(f"Analyze experiment [bold]{run_id}[/bold].")
+    _pending("Stage 7 (SHAP + K-means)", "analysis")
+
+
+@app.command()
+def report(
+    ctx: typer.Context,
+    run_id: str = typer.Option(..., "--run", "-r", help="Experiment id, e.g. EXP-001."),
+) -> None:
+    """Generate CSV/JSON exports and research figures for an experiment. [Stage 8]"""
+    _load(ctx)
+    console.print(f"Report for experiment [bold]{run_id}[/bold].")
+    _pending("Stage 8 (reporting)", "report generation")
+
+
 scenarios_app = typer.Typer(help="Browse the non-destructive cross-layer scenario catalog.", no_args_is_help=True)
 app.add_typer(scenarios_app, name="scenarios")
 
