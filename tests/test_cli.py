@@ -235,3 +235,12 @@ def test_benchmark_needs_checkpoint(workspace):
     cfg = _auth_cfg(workspace)
     r = runner.invoke(app, ["--config", cfg, "benchmark"])
     assert r.exit_code == 2 and "No DQN checkpoint" in r.output
+
+
+def test_experiments_empty_and_populated(workspace):
+    cfg = _auth_cfg(workspace)
+    r0 = runner.invoke(app, ["--config", cfg, "experiments"])
+    assert r0.exit_code == 0 and "No experiments" in r0.output
+    runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
+    r1 = runner.invoke(app, ["--config", cfg, "experiments"])
+    assert r1.exit_code == 0 and "EXP-001" in r1.output and "COMPLETED" in r1.output

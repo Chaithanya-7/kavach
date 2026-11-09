@@ -404,6 +404,36 @@ def benchmark(ctx: typer.Context) -> None:
 
 
 @app.command()
+def experiments(ctx: typer.Context) -> None:
+    """List stored experiments with their state and scenario counts."""
+    from endpoint_framework.storage import Database
+
+    loaded = _load(ctx)
+    db = Database(loaded.resolve(loaded.config.paths.database))
+    try:
+        exps = db.list_experiments()
+        if not exps:
+            console.print("[yellow]No experiments yet.[/yellow] Run one with 'framework run'.")
+            return
+        t = Table(title=f"Experiments ({len(exps)})")
+        t.add_column("ID", style="bold")
+        t.add_column("Profile")
+        t.add_column("State")
+        t.add_column("Scenarios")
+        t.add_column("Telemetry observed")
+        t.add_column("Created")
+        state_style = {"COMPLETED": "green", "FAILED": "red", "CANCELLED": "yellow"}
+        for e in exps:
+            runs = db.runs_for(e.id)
+            observed = sum(r.telemetry_status == "observed" for r in runs)
+            t.add_row(e.id, e.profile, f"[{state_style.get(e.state, 'white')}]{e.state}[/]",
+                      str(len(runs)), str(observed), e.created_at[:19])
+        console.print(t)
+    finally:
+        db.close()
+
+
+@app.command()
 def analyze(
     ctx: typer.Context,
     run_id: str = typer.Option(..., "--run", "-r", help="Experiment id, e.g. EXP-001."),

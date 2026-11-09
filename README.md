@@ -42,6 +42,7 @@ Run `framework doctor` from an elevated PowerShell to see the Security event log
 | `framework analyze --run EXP-XXX` | Metrics + SHAP + K-means — _pending Stage 7_ |
 | `framework report --run EXP-XXX` | Exports + figures — _pending Stage 8_ |
 | `framework benchmark` | Run fixed/random/adaptive and compare coverage efficiency |
+| `framework experiments` | List stored experiments, their state and telemetry |
 | `framework evaluate --mode M` executes real scenarios; runs now store real telemetry status ||
 | `--config PATH`, `-v` | Alternate config (or `$env:FRAMEWORK_CONFIG`), verbose console logs |
 
