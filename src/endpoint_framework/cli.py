@@ -226,10 +226,46 @@ def train(
     ctx: typer.Context,
     episodes: int = typer.Option(100, "--episodes", "-e", min=1, help="Training episodes."),
 ) -> None:
-    """Train the DQN scenario-selection agent against simulated feedback. [Stage 5]"""
-    _load(ctx)
-    console.print(f"Requested [bold]{episodes}[/bold] training episodes (simulated feedback, clearly labelled).")
-    _pending("Stage 5 (DQN)", "reinforcement-learning training")
+    """Train the DQN scenario-selection agent against SIMULATED feedback. [Stage 5]"""
+    loaded = _load(ctx)
+    import json
+
+    from endpoint_framework.rl.agent import DQNAgent
+    from endpoint_framework.rl.environment import ScenarioSelectionEnv
+    from endpoint_framework.rl.trainer import train as train_loop
+
+    seed = loaded.config.seed
+    scenarios = list_scenarios()
+    layer_ids = [list(Layer).index(s.layer) for s in scenarios]
+    env = ScenarioSelectionEnv(layer_ids, seed=seed)
+    agent = DQNAgent(env.state_dim, env.action_dim, seed=seed)
+
+    console.print(f"Training DQN on [bold]{len(scenarios)}[/bold] scenarios for [bold]{episodes}[/bold] episodes "
+                  f"(seed {seed}, [yellow]simulated feedback[/yellow])...")
+    with console.status("training"):
+        res = train_loop(env, agent, episodes=episodes, seed=seed)
+
+    models = loaded.resolve(loaded.config.paths.outputs_dir) / "models"
+    agent.save(models / "dqn.pt")
+    metrics = {
+        "episodes": res.episodes, "seed": res.seed, "simulated": res.simulated,
+        "episode_returns": res.episode_returns, "losses": res.losses,
+        "dqn_eval_mean": res.dqn_eval_mean, "random_eval_mean": res.random_eval_mean,
+    }
+    (models / "dqn_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    last10 = sum(res.episode_returns[-10:]) / min(10, len(res.episode_returns))
+    t = Table(title="DQN training summary (simulated feedback)", show_header=False)
+    t.add_column("", style="bold")
+    t.add_column("")
+    t.add_row("Episodes", str(res.episodes))
+    t.add_row("Mean return (last 10)", f"{last10:.2f}")
+    t.add_row("DQN greedy eval", f"{res.dqn_eval_mean:.2f}")
+    t.add_row("Random baseline", f"{res.random_eval_mean:.2f}")
+    verdict = "green]DQN > random[/" if res.dqn_eval_mean > res.random_eval_mean else "yellow]no gain yet[/"
+    t.add_row("Verdict", f"[{verdict}")
+    t.add_row("Checkpoint", str(models / "dqn.pt"))
+    console.print(t)
 
 
 @app.command()

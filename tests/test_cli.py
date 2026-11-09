@@ -94,11 +94,9 @@ def test_run_completes_when_authorized(workspace):
     assert r.exit_code == 0 and "COMPLETED" in r.output
 
 
-def test_train_validates_and_pends(workspace):
+def test_train_validates_episodes(workspace):
     runner.invoke(app, ["init"])
     assert runner.invoke(app, ["train", "-e", "0"]).exit_code != 0  # min=1
-    r = runner.invoke(app, ["train", "-e", "5"])
-    assert r.exit_code == 0 and "pending" in r.output
 
 
 def test_evaluate_mode_validation(workspace):
@@ -159,3 +157,13 @@ def test_run_profile_executes_multiple(workspace):
 def test_run_unknown_profile(workspace):
     cfg = _auth_cfg(workspace)
     assert runner.invoke(app, ["--config", cfg, "run", "-p", "nope"]).exit_code == 2
+
+
+def test_train_produces_checkpoint_and_metrics(workspace):
+    import json
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["train", "-e", "40"])
+    assert r.exit_code == 0, r.output
+    assert (workspace / "outputs/models/dqn.pt").is_file()
+    m = json.loads((workspace / "outputs/models/dqn_metrics.json").read_text())
+    assert m["episodes"] == 40 and m["simulated"] is True and len(m["episode_returns"]) == 40
