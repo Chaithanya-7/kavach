@@ -32,6 +32,8 @@ Run `framework doctor` from an elevated PowerShell to see the Security event log
 | `framework init [--force]` | Write `configs/framework.yaml`, create `experiments/` and `outputs/{logs,models,graphs,reports}` |
 | `framework status` | Active config, seed, lab gate, workspace directories |
 | `framework doctor` | Read-only readiness checks (Python, Windows 11 build, admin, pywin32, Sysmon/Security/Defender logs, config, lab gate). Exit 1 on any FAIL |
+| `framework scenarios list [--layer L]` | List the non-destructive cross-layer scenario catalog |
+| `framework scenarios info SC-XXX` | Show one scenario's full definition |
 | `--config PATH`, `-v` | Alternate config (or `$env:FRAMEWORK_CONFIG`), verbose console logs |
 
 Logs: JSON lines in `outputs/logs/framework.jsonl`.
@@ -39,7 +41,7 @@ Logs: JSON lines in `outputs/logs/framework.jsonl`.
 ## Progress
 
 - [x] Stage 1 — Foundation: package, config validation, structured logging, `init`/`status`/`doctor`, tests
-- [ ] Stage 2 — Core orchestration: experiment model + lifecycle, scheduler, scenario registry, SQLite storage
+- [~] Stage 2 — Core orchestration: scenario catalog + `scenarios list/info` done; experiment model, scheduler, SQLite storage pending
 - [ ] Stage 3 — Controlled Windows scenarios
 - [ ] Stage 4 — Telemetry (Sysmon, Security, Defender)
 - [ ] Stage 5 — DQN (simulated feedback first, clearly labelled)

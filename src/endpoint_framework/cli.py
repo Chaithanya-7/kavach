@@ -20,6 +20,9 @@ from endpoint_framework.core.config import (
 )
 from endpoint_framework.core.environment import Status, run_all_checks
 from endpoint_framework.core.log import get_logger, setup_logging
+from endpoint_framework.scenarios import get_scenario, list_scenarios
+from endpoint_framework.scenarios.base import Layer
+from endpoint_framework.scenarios.registry import ScenarioError
 
 app = typer.Typer(
     name="framework",
@@ -125,6 +128,50 @@ def doctor(ctx: typer.Context) -> None:
     console.print(" ".join(f"[{STATUS_STYLE[s]}]{s.value}: {n}[/]" for s, n in counts.items()))
     if counts[Status.FAIL]:
         raise typer.Exit(code=1)
+
+
+scenarios_app = typer.Typer(help="Browse the non-destructive cross-layer scenario catalog.", no_args_is_help=True)
+app.add_typer(scenarios_app, name="scenarios")
+
+
+@scenarios_app.command("list")
+def scenarios_list(
+    layer: Optional[Layer] = typer.Option(None, "--layer", "-l", help="Filter by Windows execution layer."),
+) -> None:
+    """List scenarios in the catalog."""
+    items = list_scenarios(layer)
+    t = Table(title=f"Scenario catalog ({len(items)})")
+    t.add_column("ID", style="bold")
+    t.add_column("Layer")
+    t.add_column("Name")
+    t.add_column("ATT&CK")
+    for s in items:
+        t.add_row(s.id, s.layer.value, s.name, s.mitre_attack or "—")
+    console.print(t)
+
+
+@scenarios_app.command("info")
+def scenarios_info(scenario_id: str = typer.Argument(..., help="Scenario id, e.g. SC-001.")) -> None:
+    """Show the full definition of one scenario."""
+    try:
+        s = get_scenario(scenario_id.upper())
+    except ScenarioError:
+        err_console.print(f"[red]Unknown scenario:[/red] {scenario_id}. Try 'framework scenarios list'.")
+        raise typer.Exit(code=2)
+    t = Table(show_header=False, title=f"{s.id} — {s.name}")
+    t.add_column("Field", style="bold")
+    t.add_column("Value")
+    t.add_row("Layer", s.layer.value)
+    t.add_row("Description", s.description)
+    t.add_row("ATT&CK", s.mitre_attack or "—")
+    t.add_row("Destructive", "[green]no[/green]" if not s.destructive else "[red]yes[/red]")
+    t.add_row("Prerequisites", "\n".join(s.prerequisites) or "none")
+    t.add_row("Expected events", "\n".join(f"{e.source} {e.event_id or ''}: {e.description}".strip() for e in s.expected_events) or "none defined")
+    t.add_row("Timeout", f"{s.timeout_seconds}s")
+    t.add_row("Success criteria", s.success_criteria)
+    t.add_row("Cleanup", s.cleanup)
+    console.print(t)
+    console.print("[dim]Execution engine arrives in Stage 3; this is the definition only.[/dim]")
 
 
 if __name__ == "__main__":
