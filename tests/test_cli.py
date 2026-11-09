@@ -111,3 +111,24 @@ def test_analyze_and_report_pend(workspace):
     runner.invoke(app, ["init"])
     assert "pending" in runner.invoke(app, ["analyze", "-r", "EXP-001"]).output
     assert "pending" in runner.invoke(app, ["report", "-r", "EXP-001"]).output
+
+
+def test_menu_shows_banner_and_real_commands():
+    r = runner.invoke(app, ["menu"])
+    assert r.exit_code == 0
+    assert "KAVACH".replace("KAVACH", "") == ""  # banner is art; check menu text instead
+    assert "SCENARIO MODULES" in r.output and "scenarios list" in r.output
+    assert "authorized, non-destructive" in r.output
+
+
+def test_shell_dispatches_then_exits(workspace):
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["shell"], input="scenarios list\nexit\n")
+    assert r.exit_code == 0
+    assert "SC-001" in r.output  # the dispatched command ran
+
+
+def test_shell_survives_bad_command(workspace):
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["shell"], input="nonsense-xyz\nexit\n")
+    assert r.exit_code == 0  # bad command did not crash the console

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import platform
+import shlex
 from pathlib import Path
 from typing import Optional
 
+import click
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -23,6 +25,7 @@ from endpoint_framework.core.log import get_logger, setup_logging
 from endpoint_framework.scenarios import get_scenario, list_scenarios
 from endpoint_framework.scenarios.base import Layer
 from endpoint_framework.scenarios.registry import ScenarioError
+from endpoint_framework.ui import render_banner, render_menu
 
 app = typer.Typer(
     name="framework",
@@ -257,6 +260,45 @@ def scenarios_info(scenario_id: str = typer.Argument(..., help="Scenario id, e.g
     t.add_row("Cleanup", s.cleanup)
     console.print(t)
     console.print("[dim]Execution engine arrives in Stage 3; this is the definition only.[/dim]")
+
+
+@app.command()
+def menu() -> None:
+    """Show the branded banner and the module menu."""
+    render_banner(console)
+    render_menu(console)
+
+
+@app.command()
+def shell(ctx: typer.Context) -> None:
+    """Interactive console: type the commands from the menu at the prompt."""
+    render_banner(console)
+    render_menu(console)
+    command = typer.main.get_command(app)
+    while True:
+        try:
+            line = console.input("[bold red]kavach[/] [dim]>[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+        if not line:
+            continue
+        if line in {"exit", "quit"}:
+            break
+        if line == "clear":
+            console.clear()
+            continue
+        if line in {"menu", "help", "?"}:
+            render_menu(console)
+            continue
+        try:
+            command.main(args=shlex.split(line), prog_name="framework", standalone_mode=False)
+        except SystemExit:
+            pass  # a subcommand's typer.Exit; keep the shell alive
+        except click.ClickException as e:
+            e.show()
+        except Exception as e:  # noqa: BLE001 - never let one bad command kill the console
+            err_console.print(f"[red]error:[/red] {e}")
 
 
 if __name__ == "__main__":
