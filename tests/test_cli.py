@@ -244,3 +244,14 @@ def test_experiments_empty_and_populated(workspace):
     runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
     r1 = runner.invoke(app, ["--config", cfg, "experiments"])
     assert r1.exit_code == 0 and "EXP-001" in r1.output and "COMPLETED" in r1.output
+
+
+def test_report_writes_markdown(workspace):
+    cfg = _auth_cfg(workspace)
+    runner.invoke(app, ["--config", cfg, "run", "-p", "baseline"])
+    runner.invoke(app, ["--config", cfg, "report", "-r", "EXP-001"])
+    md = (workspace / "outputs/reports/EXP-001_report.md")
+    assert md.is_file()
+    text = md.read_text()
+    assert "# Experiment EXP-001" in text and "## Metrics" in text and "## Scenario runs" in text
+    assert "simulated" in text  # honesty caveat present
