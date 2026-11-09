@@ -1,0 +1,64 @@
+import json
+
+from typer.testing import CliRunner
+
+from endpoint_framework import __version__
+from endpoint_framework.cli import app
+
+runner = CliRunner()
+
+
+def test_help():
+    r = runner.invoke(app, ["--help"])
+    assert r.exit_code == 0
+    for cmd in ("init", "status", "doctor"):
+        assert cmd in r.output
+
+
+def test_version():
+    r = runner.invoke(app, ["--version"])
+    assert r.exit_code == 0 and __version__ in r.output
+
+
+def test_init_creates_workspace_and_log(workspace):
+    r = runner.invoke(app, ["init"])
+    assert r.exit_code == 0, r.output
+    assert (workspace / "configs" / "framework.yaml").is_file()
+    for d in ("experiments", "outputs/logs", "outputs/models", "outputs/graphs", "outputs/reports"):
+        assert (workspace / d).is_dir()
+    lines = (workspace / "outputs/logs/framework.jsonl").read_text().splitlines()
+    entry = json.loads(lines[-1])
+    assert entry["msg"] == "workspace initialized" and "root" in entry
+
+
+def test_init_does_not_overwrite_without_force(workspace):
+    runner.invoke(app, ["init"])
+    cfg = workspace / "configs" / "framework.yaml"
+    cfg.write_text("seed: 99\n")
+    runner.invoke(app, ["init"])
+    assert cfg.read_text() == "seed: 99\n"
+    runner.invoke(app, ["init", "--force"])
+    assert "seed: 42" in cfg.read_text()
+
+
+def test_status_after_init(workspace):
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["status"])
+    assert r.exit_code == 0, r.output
+    assert "not authorized" in r.output
+
+
+def test_doctor_runs_and_logs(workspace):
+    runner.invoke(app, ["init"])
+    r = runner.invoke(app, ["doctor"])
+    assert r.exit_code == 0, r.output  # no FAIL in a correctly installed environment
+    assert "Python version" in r.output
+    logged = [json.loads(l) for l in (workspace / "outputs/logs/framework.jsonl").read_text().splitlines()]
+    assert any(e.get("check") == "Python version" for e in logged)
+
+
+def test_invalid_config_exits_2(workspace):
+    bad = workspace / "bad.yaml"
+    bad.write_text("unknown_key: 1\n")
+    r = runner.invoke(app, ["--config", str(bad), "status"])
+    assert r.exit_code == 2

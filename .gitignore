@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+# runtime artifacts (raw evidence is kept locally, not in git)
+experiments/
+outputs/
