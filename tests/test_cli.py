@@ -100,9 +100,33 @@ def test_train_validates_episodes(workspace):
 
 
 def test_evaluate_mode_validation(workspace):
-    runner.invoke(app, ["init"])
-    assert runner.invoke(app, ["evaluate", "-m", "stealth"]).exit_code == 2
-    assert runner.invoke(app, ["evaluate", "-m", "random"]).exit_code == 0
+    cfg = _auth_cfg(workspace)
+    assert runner.invoke(app, ["--config", cfg, "evaluate", "-m", "stealth"]).exit_code == 2
+
+
+def test_evaluate_fixed_and_random_execute(workspace):
+    cfg = _auth_cfg(workspace)
+    for mode in ("fixed", "random"):
+        r = runner.invoke(app, ["--config", cfg, "evaluate", "-m", mode])
+        assert r.exit_code == 0, r.output
+        assert "COMPLETED" in r.output
+    from endpoint_framework.storage import Database
+    db = Database(workspace / "experiments" / "framework.db")
+    assert {e.profile for e in db.list_experiments()} == {"eval-fixed", "eval-random"}
+    db.close()
+
+
+def test_evaluate_adaptive_needs_checkpoint(workspace):
+    cfg = _auth_cfg(workspace)
+    r = runner.invoke(app, ["--config", cfg, "evaluate", "-m", "adaptive"])
+    assert r.exit_code == 2 and "No DQN checkpoint" in r.output
+
+
+def test_evaluate_adaptive_after_train(workspace):
+    cfg = _auth_cfg(workspace)
+    runner.invoke(app, ["--config", cfg, "train", "-e", "30"])
+    r = runner.invoke(app, ["--config", cfg, "evaluate", "-m", "adaptive"])
+    assert r.exit_code == 0 and "COMPLETED" in r.output
 
 
 

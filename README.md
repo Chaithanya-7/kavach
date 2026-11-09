@@ -52,7 +52,7 @@ Logs: JSON lines in `outputs/logs/framework.jsonl`.
 - [x] Stage 3 — Controlled Windows scenarios: non-destructive executor (process/file/registry/schtask/TCP/DNS/service), Windows-only steps skip honestly off Windows
 - [~] Stage 4 — Telemetry: Sysmon/Security/Defender collector + normalizer (Windows-only; **unverified on a real host**)
 - [x] Stage 5 — DQN: trainable PyTorch agent on simulated feedback, beats random baseline, checkpoints
-- [~] Stage 6 — Adaptive orchestration: `evaluate` validates modes; DQN-in-the-loop over real runs still to wire
+- [x] Stage 6 — Adaptive orchestration: `evaluate --mode adaptive|random|fixed` executes real scenarios in the strategy's order; adaptive order comes from the trained DQN
 - [x] Stage 7 — SHAP (GradientExplainer) + K-means (honest "not meaningful" with too few experiments)
 - [x] Stage 8 — Reporting: CSV/JSON exports + matplotlib figures (training curve, coverage)
 

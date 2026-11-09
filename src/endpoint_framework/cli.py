@@ -273,13 +273,49 @@ def evaluate(
     ctx: typer.Context,
     mode: str = typer.Option("adaptive", "--mode", "-m", help="Selection strategy: adaptive | random | fixed."),
 ) -> None:
-    """Evaluate a selection strategy end-to-end. [Stage 6]"""
-    _load(ctx)
+    """Execute scenarios in an order chosen by a strategy, end-to-end. [Stage 6]"""
+    loaded = _load(ctx)
     if mode not in {"adaptive", "random", "fixed"}:
         err_console.print("[red]--mode[/red] must be one of: adaptive, random, fixed.")
         raise typer.Exit(code=2)
-    console.print(f"Evaluation mode [bold]{mode}[/bold].")
-    _pending("Stage 6 (adaptive orchestration)", "strategy evaluation")
+    scenarios = list_scenarios()
+    if mode == "fixed":
+        ordered = scenarios
+    elif mode == "random":
+        import random as _random
+        ordered = scenarios[:]
+        _random.Random(loaded.config.seed).shuffle(ordered)
+    else:  # adaptive: order comes from the trained DQN's greedy policy
+        ckpt = loaded.resolve(loaded.config.paths.outputs_dir) / "models" / "dqn.pt"
+        if not ckpt.is_file():
+            err_console.print("[red]No DQN checkpoint[/red] — run 'framework train' before adaptive evaluation.")
+            raise typer.Exit(code=2)
+        ordered = _adaptive_order(loaded, scenarios, ckpt)
+    _require_lab(loaded)
+    console.print(f"Strategy [bold]{mode}[/bold] -> order: {', '.join(s.id for s in ordered)}")
+    _execute_experiment(loaded, f"eval-{mode}", ordered)
+
+
+def _adaptive_order(loaded: LoadedConfig, scenarios: list, ckpt) -> list:
+    """Replay the trained DQN greedily on the simulated env to get a scenario order."""
+    from endpoint_framework.rl.agent import DQNAgent
+    from endpoint_framework.rl.environment import ScenarioSelectionEnv
+
+    layer_ids = [list(Layer).index(s.layer) for s in scenarios]
+    env = ScenarioSelectionEnv(layer_ids, seed=loaded.config.seed)
+    agent = DQNAgent(env.state_dim, env.action_dim, seed=loaded.config.seed)
+    agent.load(ckpt)
+    state = env.reset()
+    order: list = []
+    done = False
+    while not done:
+        a = agent.act(state, epsilon=0.0)
+        if scenarios[a] not in order:
+            order.append(scenarios[a])
+        state, _, done, _ = env.step(a)
+    # append any the policy never selected, so every scenario still runs once
+    order += [s for s in scenarios if s not in order]
+    return order
 
 
 @app.command()
