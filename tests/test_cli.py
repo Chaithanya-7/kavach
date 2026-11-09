@@ -88,10 +88,10 @@ def test_run_refused_without_lab_auth(workspace):
     assert r.exit_code == 2 and "Refused" in r.output
 
 
-def test_run_pending_when_authorized(workspace):
+def test_run_completes_when_authorized(workspace):
     cfg = _auth_cfg(workspace)
     r = runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
-    assert r.exit_code == 0 and "pending" in r.output
+    assert r.exit_code == 0 and "COMPLETED" in r.output
 
 
 def test_train_validates_and_pends(workspace):
@@ -132,3 +132,30 @@ def test_shell_survives_bad_command(workspace):
     runner.invoke(app, ["init"])
     r = runner.invoke(app, ["shell"], input="nonsense-xyz\nexit\n")
     assert r.exit_code == 0  # bad command did not crash the console
+
+
+def test_run_scenario_persists_experiment(workspace):
+    cfg = _auth_cfg(workspace)
+    r = runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
+    assert r.exit_code == 0, r.output
+    assert "EXP-001" in r.output and "COMPLETED" in r.output
+    from endpoint_framework.storage import Database
+    db = Database(workspace / "experiments" / "framework.db")
+    exp = db.get_experiment("EXP-001")
+    assert exp.state == "COMPLETED" and len(db.runs_for("EXP-001")) == 1
+    db.close()
+
+
+def test_run_profile_executes_multiple(workspace):
+    cfg = _auth_cfg(workspace)
+    r = runner.invoke(app, ["--config", cfg, "run", "-p", "user"])
+    assert r.exit_code == 0, r.output
+    from endpoint_framework.storage import Database
+    db = Database(workspace / "experiments" / "framework.db")
+    assert len(db.runs_for("EXP-001")) == 3  # three user-mode scenarios
+    db.close()
+
+
+def test_run_unknown_profile(workspace):
+    cfg = _auth_cfg(workspace)
+    assert runner.invoke(app, ["--config", cfg, "run", "-p", "nope"]).exit_code == 2

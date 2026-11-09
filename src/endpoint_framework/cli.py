@@ -147,28 +147,78 @@ def _require_lab(loaded: LoadedConfig) -> None:
         raise typer.Exit(code=2)
 
 
+PROFILES = {"baseline": None, "user": Layer.USER_MODE, "network": Layer.NETWORK, "os": Layer.OS_SERVICE}
+
+
 @app.command()
 def run(
     ctx: typer.Context,
     scenario: Optional[str] = typer.Option(None, "--scenario", "-s", help="Scenario id, e.g. SC-001."),
-    profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Named scenario profile, e.g. baseline."),
+    profile: Optional[str] = typer.Option(None, "--profile", "-p", help=f"Profile: {', '.join(PROFILES)}."),
 ) -> None:
-    """Execute a controlled scenario (or profile) and collect telemetry. [Stage 3]"""
+    """Execute a controlled scenario (or profile), persist the experiment record. [Stage 3]"""
     loaded = _load(ctx)
     if bool(scenario) == bool(profile):
         err_console.print("[red]Provide exactly one of[/red] --scenario or --profile.")
         raise typer.Exit(code=2)
     if scenario:
         try:
-            sc = get_scenario(scenario.upper())
+            targets = [get_scenario(scenario.upper())]
         except ScenarioError:
             err_console.print(f"[red]Unknown scenario:[/red] {scenario}. Try 'framework scenarios list'.")
             raise typer.Exit(code=2)
-        console.print(f"Selected [bold]{sc.id}[/bold] ({sc.layer.value}): {sc.name}")
+        profile_name = scenario.upper()
     else:
-        console.print(f"Selected profile [bold]{profile}[/bold]")
+        if profile not in PROFILES:
+            err_console.print(f"[red]Unknown profile:[/red] {profile}. Choose: {', '.join(PROFILES)}.")
+            raise typer.Exit(code=2)
+        targets = list_scenarios(PROFILES[profile])
+        profile_name = profile
     _require_lab(loaded)
-    _pending("Stage 3 (scenario execution) + Stage 4 (telemetry)", "controlled execution")
+    _execute_experiment(loaded, profile_name, targets)
+
+
+def _execute_experiment(loaded: LoadedConfig, profile_name: str, targets: list) -> None:
+    from endpoint_framework.scenarios.executor import execute
+    from endpoint_framework.storage import Database, ExperimentState, ScenarioRun
+    from endpoint_framework.storage.models import TelemetryStatus
+    from datetime import datetime, timezone
+
+    workspace = loaded.resolve(loaded.config.paths.experiments_dir)
+    workspace.mkdir(parents=True, exist_ok=True)
+    db = Database(loaded.resolve(loaded.config.paths.database))
+    exp = None
+    try:
+        exp = db.create_experiment(profile_name, seed=loaded.config.seed, host=platform.node())
+        db.set_state(exp.id, ExperimentState.VALIDATED)
+        db.set_state(exp.id, ExperimentState.RUNNING)
+        console.print(f"Experiment [bold]{exp.id}[/bold] — profile [bold]{profile_name}[/bold], {len(targets)} scenario(s)")
+
+        t = Table(title=f"{exp.id} results")
+        t.add_column("Scenario", style="bold")
+        t.add_column("Status")
+        t.add_column("Duration")
+        t.add_column("Detail")
+        style = {"completed": "green", "failed": "red", "skipped": "yellow"}
+        for sc in targets:
+            res, dur = execute(sc, workspace)
+            db.add_scenario_run(ScenarioRun(
+                experiment_id=exp.id, scenario_id=sc.id, status=res.status,
+                ended_at=datetime.now(timezone.utc).isoformat(), duration_s=round(dur, 4),
+                detail=res.detail, telemetry_status=TelemetryStatus.PENDING.value,
+            ))
+            t.add_row(sc.id, f"[{style[res.status]}]{res.status}[/]", f"{dur:.3f}s", res.detail[:60])
+        console.print(t)
+
+        db.set_state(exp.id, ExperimentState.COLLECTING)  # telemetry collection: Stage 4, not wired on this host
+        db.set_state(exp.id, ExperimentState.COMPLETED)
+        console.print(f"[green]Stored[/green] {exp.id} (state COMPLETED). Telemetry correlation is pending Stage 4.")
+    except Exception:
+        if exp is not None:
+            db.set_state(exp.id, ExperimentState.FAILED)
+        raise
+    finally:
+        db.close()
 
 
 @app.command()
