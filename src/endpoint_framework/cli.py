@@ -262,8 +262,8 @@ def train(
     t.add_row("Mean return (last 10)", f"{last10:.2f}")
     t.add_row("DQN greedy eval", f"{res.dqn_eval_mean:.2f}")
     t.add_row("Random baseline", f"{res.random_eval_mean:.2f}")
-    verdict = "green]DQN > random[/" if res.dqn_eval_mean > res.random_eval_mean else "yellow]no gain yet[/"
-    t.add_row("Verdict", f"[{verdict}")
+    verdict = "[green]DQN > random[/green]" if res.dqn_eval_mean > res.random_eval_mean else "[yellow]no gain yet[/yellow]"
+    t.add_row("Verdict", verdict)
     t.add_row("Checkpoint", str(models / "dqn.pt"))
     console.print(t)
 
@@ -287,10 +287,69 @@ def analyze(
     ctx: typer.Context,
     run_id: str = typer.Option(..., "--run", "-r", help="Experiment id, e.g. EXP-001."),
 ) -> None:
-    """Run metrics, SHAP and K-means over a stored experiment. [Stage 7]"""
-    _load(ctx)
-    console.print(f"Analyze experiment [bold]{run_id}[/bold].")
-    _pending("Stage 7 (SHAP + K-means)", "analysis")
+    """Run metrics, SHAP and K-means over stored experiments. [Stage 7]"""
+    import json
+
+    from endpoint_framework.analysis.clustering import cluster_experiments
+    from endpoint_framework.analysis.metrics import compute_metrics
+    from endpoint_framework.storage import Database
+
+    loaded = _load(ctx)
+    db = Database(loaded.resolve(loaded.config.paths.database))
+    try:
+        if db.get_experiment(run_id) is None:
+            err_console.print(f"[red]Unknown experiment:[/red] {run_id}. Run one with 'framework run'.")
+            raise typer.Exit(code=2)
+
+        m = compute_metrics(db, run_id)
+        t = Table(title=f"{run_id} metrics", show_header=False)
+        t.add_column("", style="bold"); t.add_column("")
+        t.add_row("Scenarios", str(m.total))
+        t.add_row("Completed / failed / skipped", f"{m.completed} / {m.failed} / {m.skipped}")
+        t.add_row("Completion rate", f"{m.completion_rate:.0%}")
+        t.add_row("Telemetry observed", str(m.telemetry_observed))
+        t.add_row("Mean duration", f"{m.mean_duration_s:.3f}s")
+        t.add_row("Layer coverage", ", ".join(f"{k}:{v}" for k, v in m.layer_coverage.items()) or "none")
+        console.print(t)
+
+        analysis: dict = {"experiment_id": run_id, "metrics": m.__dict__}
+
+        # SHAP over the trained DQN, if a checkpoint exists.
+        models = loaded.resolve(loaded.config.paths.outputs_dir) / "models"
+        ckpt = models / "dqn.pt"
+        if ckpt.is_file():
+            from endpoint_framework.analysis.explainability import explain_agent
+            from endpoint_framework.rl.agent import DQNAgent
+
+            scenarios = list_scenarios()
+            agent = DQNAgent(len(scenarios), len(scenarios), seed=loaded.config.seed)
+            agent.load(ckpt)
+            attr = explain_agent(agent, [s.id for s in scenarios], seed=loaded.config.seed)
+            top = sorted(attr.importances.items(), key=lambda kv: kv[1], reverse=True)[:5]
+            console.print(f"\n[bold]SHAP feature importance[/bold] ({attr.method}, simulated):")
+            for sid, v in top:
+                console.print(f"  {sid}  {v:.4f}")
+            analysis["shap"] = {"method": attr.method, "importances": attr.importances, "simulated": True}
+        else:
+            console.print("\n[yellow]No DQN checkpoint[/yellow] — run 'framework train' for SHAP attribution.")
+
+        cl = cluster_experiments(db)
+        if cl.meaningful:
+            sil = f"{cl.silhouette:.3f}" if cl.silhouette is not None else "n/a"
+            console.print(f"\n[bold]K-means[/bold]: k={cl.k}, silhouette={sil}")
+            analysis["clustering"] = {"k": cl.k, "labels": cl.labels, "silhouette": cl.silhouette,
+                                      "experiment_ids": cl.experiment_ids}
+        else:
+            console.print(f"\n[yellow]K-means not meaningful[/yellow]: {cl.reason}")
+            analysis["clustering"] = {"meaningful": False, "reason": cl.reason}
+
+        reports = loaded.resolve(loaded.config.paths.outputs_dir) / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        out = reports / f"{run_id}_analysis.json"
+        out.write_text(json.dumps(analysis, indent=2, default=str), encoding="utf-8")
+        console.print(f"\n[green]Wrote[/green] {out}")
+    finally:
+        db.close()
 
 
 @app.command()
@@ -299,9 +358,24 @@ def report(
     run_id: str = typer.Option(..., "--run", "-r", help="Experiment id, e.g. EXP-001."),
 ) -> None:
     """Generate CSV/JSON exports and research figures for an experiment. [Stage 8]"""
-    _load(ctx)
-    console.print(f"Report for experiment [bold]{run_id}[/bold].")
-    _pending("Stage 8 (reporting)", "report generation")
+    from endpoint_framework.reporting.generator import export_experiment
+    from endpoint_framework.storage import Database
+
+    loaded = _load(ctx)
+    db = Database(loaded.resolve(loaded.config.paths.database))
+    try:
+        if db.get_experiment(run_id) is None:
+            err_console.print(f"[red]Unknown experiment:[/red] {run_id}.")
+            raise typer.Exit(code=2)
+        outputs = loaded.resolve(loaded.config.paths.outputs_dir)
+        files = export_experiment(db, run_id, outputs / "reports", outputs / "models")
+        t = Table(title=f"{run_id} report artifacts")
+        t.add_column("Artifact", style="bold"); t.add_column("Path")
+        for name, path in files.items():
+            t.add_row(name, str(path))
+        console.print(t)
+    finally:
+        db.close()
 
 
 scenarios_app = typer.Typer(help="Browse the non-destructive cross-layer scenario catalog.", no_args_is_help=True)

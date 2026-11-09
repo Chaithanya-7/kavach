@@ -105,10 +105,6 @@ def test_evaluate_mode_validation(workspace):
     assert runner.invoke(app, ["evaluate", "-m", "random"]).exit_code == 0
 
 
-def test_analyze_and_report_pend(workspace):
-    runner.invoke(app, ["init"])
-    assert "pending" in runner.invoke(app, ["analyze", "-r", "EXP-001"]).output
-    assert "pending" in runner.invoke(app, ["report", "-r", "EXP-001"]).output
 
 
 def test_menu_shows_banner_and_real_commands():
@@ -167,3 +163,22 @@ def test_train_produces_checkpoint_and_metrics(workspace):
     assert (workspace / "outputs/models/dqn.pt").is_file()
     m = json.loads((workspace / "outputs/models/dqn_metrics.json").read_text())
     assert m["episodes"] == 40 and m["simulated"] is True and len(m["episode_returns"]) == 40
+
+
+def test_analyze_and_report_endtoend(workspace):
+    cfg = _auth_cfg(workspace)
+    runner.invoke(app, ["--config", cfg, "run", "-p", "baseline"])
+    runner.invoke(app, ["--config", cfg, "train", "-e", "30"])
+    a = runner.invoke(app, ["--config", cfg, "analyze", "-r", "EXP-001"])
+    assert a.exit_code == 0, a.output
+    assert "metrics" in a.output.lower() and "SHAP" in a.output
+    assert (workspace / "outputs/reports/EXP-001_analysis.json").is_file()
+    r = runner.invoke(app, ["--config", cfg, "report", "-r", "EXP-001"])
+    assert r.exit_code == 0, r.output
+    for f in ["EXP-001_runs.csv", "EXP-001_metrics.json", "EXP-001_coverage.png", "dqn_training_curve.png"]:
+        assert (workspace / "outputs/reports" / f).is_file()
+
+
+def test_analyze_unknown_experiment(workspace):
+    cfg = _auth_cfg(workspace)
+    assert runner.invoke(app, ["--config", cfg, "analyze", "-r", "EXP-999"]).exit_code == 2

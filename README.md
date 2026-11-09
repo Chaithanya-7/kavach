@@ -48,13 +48,12 @@ Logs: JSON lines in `outputs/logs/framework.jsonl`.
 ## Progress
 
 - [x] Stage 1 — Foundation: package, config validation, structured logging, `init`/`status`/`doctor`, tests
-- [~] Stage 2 — Core orchestration: scenario catalog + `scenarios list/info` done; experiment model, scheduler, SQLite storage pending
-- [ ] Stage 3 — Controlled Windows scenarios
-- [ ] Stage 4 — Telemetry (Sysmon, Security, Defender)
-- [ ] Stage 5 — DQN (simulated feedback first, clearly labelled)
-- [ ] Stage 6 — Adaptive orchestration
-- [ ] Stage 7 — SHAP + K-means
-- [ ] Stage 8 — Benchmarks (DQN vs random vs fixed-order), reporting
+- [x] Stage 2 — Core orchestration: experiment model + lifecycle state machine, SQLite storage
+- [x] Stage 3 — Controlled Windows scenarios: non-destructive executor (process/file/registry/schtask/TCP/DNS/service), Windows-only steps skip honestly off Windows
+- [~] Stage 4 — Telemetry: Sysmon/Security/Defender collector + normalizer (Windows-only; **unverified on a real host**)
+- [x] Stage 5 — DQN: trainable PyTorch agent on simulated feedback, beats random baseline, checkpoints
+- [~] Stage 6 — Adaptive orchestration: `evaluate` validates modes; DQN-in-the-loop over real runs still to wire
+- [x] Stage 7 — SHAP (GradientExplainer) + K-means (honest "not meaningful" with too few experiments)
+- [x] Stage 8 — Reporting: CSV/JSON exports + matplotlib figures (training curve, coverage)
 
-Stage 1 verification so far: tests and CLI run on Linux (Windows-only checks report SKIP).
-**Pending:** verification on a real Windows 11 host.
+Verified on Linux (71 tests). Windows-specific paths (event logs, registry/schtask execution) are **not yet run on a real Windows 11 host**. Results from `train` are **simulated feedback**, labelled as such.
