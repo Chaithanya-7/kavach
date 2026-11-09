@@ -200,25 +200,51 @@ def _execute_experiment(loaded: LoadedConfig, profile_name: str, targets: list) 
         t.add_column("Duration")
         t.add_column("Detail")
         style = {"completed": "green", "failed": "red", "skipped": "yellow"}
+        from endpoint_framework.telemetry.correlator import telemetry_for
+
+        t.add_column("Telemetry")
+        rows = []
         for sc in targets:
             res, dur = execute(sc, workspace)
+            rows.append((sc, res, dur))
+
+        db.set_state(exp.id, ExperimentState.COLLECTING)
+        for sc, res, dur in rows:
+            tel_status, tel_count, _ = telemetry_for(sc)
             db.add_scenario_run(ScenarioRun(
                 experiment_id=exp.id, scenario_id=sc.id, status=res.status,
                 ended_at=datetime.now(timezone.utc).isoformat(), duration_s=round(dur, 4),
-                detail=res.detail, telemetry_status=TelemetryStatus.PENDING.value,
+                detail=res.detail, telemetry_status=tel_status, event_count=tel_count,
             ))
-            t.add_row(sc.id, f"[{style[res.status]}]{res.status}[/]", f"{dur:.3f}s", res.detail[:60])
+            t.add_row(sc.id, f"[{style[res.status]}]{res.status}[/]", f"{dur:.3f}s",
+                      res.detail[:48], tel_status)
         console.print(t)
 
-        db.set_state(exp.id, ExperimentState.COLLECTING)  # telemetry collection: Stage 4, not wired on this host
         db.set_state(exp.id, ExperimentState.COMPLETED)
-        console.print(f"[green]Stored[/green] {exp.id} (state COMPLETED). Telemetry correlation is pending Stage 4.")
+        console.print(f"[green]Stored[/green] {exp.id} (state COMPLETED).")
+        return exp
     except Exception:
         if exp is not None:
             db.set_state(exp.id, ExperimentState.FAILED)
         raise
     finally:
         db.close()
+
+
+def _strategy_order(loaded: LoadedConfig, mode: str, scenarios: list) -> list:
+    """Order scenarios by a selection strategy. 'adaptive' needs a trained checkpoint."""
+    if mode == "fixed":
+        return scenarios
+    if mode == "random":
+        import random as _random
+        out = scenarios[:]
+        _random.Random(loaded.config.seed).shuffle(out)
+        return out
+    ckpt = loaded.resolve(loaded.config.paths.outputs_dir) / "models" / "dqn.pt"
+    if not ckpt.is_file():
+        err_console.print("[red]No DQN checkpoint[/red] — run 'framework train' first.")
+        raise typer.Exit(code=2)
+    return _adaptive_order(loaded, scenarios, ckpt)
 
 
 @app.command()
@@ -279,18 +305,7 @@ def evaluate(
         err_console.print("[red]--mode[/red] must be one of: adaptive, random, fixed.")
         raise typer.Exit(code=2)
     scenarios = list_scenarios()
-    if mode == "fixed":
-        ordered = scenarios
-    elif mode == "random":
-        import random as _random
-        ordered = scenarios[:]
-        _random.Random(loaded.config.seed).shuffle(ordered)
-    else:  # adaptive: order comes from the trained DQN's greedy policy
-        ckpt = loaded.resolve(loaded.config.paths.outputs_dir) / "models" / "dqn.pt"
-        if not ckpt.is_file():
-            err_console.print("[red]No DQN checkpoint[/red] — run 'framework train' before adaptive evaluation.")
-            raise typer.Exit(code=2)
-        ordered = _adaptive_order(loaded, scenarios, ckpt)
+    ordered = _strategy_order(loaded, mode, scenarios)
     _require_lab(loaded)
     console.print(f"Strategy [bold]{mode}[/bold] -> order: {', '.join(s.id for s in ordered)}")
     _execute_experiment(loaded, f"eval-{mode}", ordered)
@@ -316,6 +331,76 @@ def _adaptive_order(loaded: LoadedConfig, scenarios: list, ckpt) -> list:
     # append any the policy never selected, so every scenario still runs once
     order += [s for s in scenarios if s not in order]
     return order
+
+
+def _steps_to_full_coverage(db, experiment_id: str) -> int | None:
+    """Scenarios executed, in order, until every Windows layer is first covered by a completed run."""
+    from endpoint_framework.scenarios import get_scenario
+    from endpoint_framework.scenarios.registry import ScenarioError
+
+    all_layers = {layer.value for layer in Layer}
+    covered: set[str] = set()
+    for i, r in enumerate(db.runs_for(experiment_id), start=1):
+        if r.status != "completed":
+            continue
+        try:
+            covered.add(get_scenario(r.scenario_id).layer.value)
+        except ScenarioError:
+            pass
+        if covered >= all_layers:
+            return i
+    return None  # never covered every layer
+
+
+@app.command()
+def benchmark(ctx: typer.Context) -> None:
+    """Run fixed / random / adaptive strategies and compare coverage efficiency. [Stage 8]"""
+    from endpoint_framework.analysis.metrics import compute_metrics
+    from endpoint_framework.analysis.visualization import benchmark_bar
+    from endpoint_framework.storage import Database
+
+    loaded = _load(ctx)
+    _require_lab(loaded)
+    modes = ["fixed", "random", "adaptive"]
+    scenarios = list_scenarios()
+
+    summary: dict[str, dict] = {}
+    for mode in modes:
+        ordered = _strategy_order(loaded, mode, scenarios)  # exits 2 if adaptive lacks a checkpoint
+        console.print(f"[bold]{mode}[/bold] -> {', '.join(s.id for s in ordered)}")
+        exp = _execute_experiment(loaded, f"bench-{mode}", ordered)
+        db = Database(loaded.resolve(loaded.config.paths.database))
+        try:
+            m = compute_metrics(db, exp.id)
+            steps = _steps_to_full_coverage(db, exp.id)
+        finally:
+            db.close()
+        summary[mode] = {"experiment_id": exp.id, "completed": m.completed, "skipped": m.skipped,
+                         "steps_to_full_coverage": steps, "mean_duration_s": m.mean_duration_s}
+
+    t = Table(title="Strategy benchmark — lower steps-to-full-coverage is better")
+    t.add_column("Strategy", style="bold")
+    t.add_column("Experiment")
+    t.add_column("Completed")
+    t.add_column("Steps to cover all layers")
+    best = min((v["steps_to_full_coverage"] for v in summary.values()
+                if v["steps_to_full_coverage"] is not None), default=None)
+    for mode in modes:
+        v = summary[mode]
+        steps = v["steps_to_full_coverage"]
+        cell = "never" if steps is None else (f"[green]{steps}[/green]" if steps == best else str(steps))
+        t.add_row(mode, v["experiment_id"], str(v["completed"]), cell)
+    console.print(t)
+    console.print("[dim]Note: adaptive was trained on simulated coverage that counts Windows-only "
+                  "scenarios; those skip off Windows, so this real-execution metric is only decisive "
+                  "on a real Windows host.[/dim]")
+
+    import json
+    reports = loaded.resolve(loaded.config.paths.outputs_dir) / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "benchmark.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    png = benchmark_bar({m: summary[m]["steps_to_full_coverage"] for m in modes}, reports / "benchmark.png")
+    console.print(f"[green]Wrote[/green] {reports / 'benchmark.json'} and {png}")
 
 
 @app.command()

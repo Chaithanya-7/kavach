@@ -40,6 +40,24 @@ def training_curve(metrics_json: Path, out_png: Path) -> Path:
     return out_png
 
 
+def benchmark_bar(steps_by_mode: dict[str, int | None], out_png: Path) -> Path:
+    """Steps-to-full-coverage per strategy (lower is better); 'never' shown as 0-height hatched."""
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    modes = list(steps_by_mode)
+    vals = [steps_by_mode[m] if steps_by_mode[m] is not None else 0 for m in modes]
+    fig, ax = plt.subplots(figsize=(6, 4))
+    bars = ax.bar(modes, vals, color=["C0", "C1", "C2"])
+    for b, m in zip(bars, modes):
+        if steps_by_mode[m] is None:
+            b.set_hatch("//")
+    ax.set_ylabel("scenarios until all layers covered")
+    ax.set_title("Strategy benchmark (lower is better)")
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=150)
+    plt.close(fig)
+    return out_png
+
+
 def coverage_bar(layer_coverage: dict[str, int], out_png: Path) -> Path:
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(7, 4))

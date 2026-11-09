@@ -206,3 +206,32 @@ def test_analyze_and_report_endtoend(workspace):
 def test_analyze_unknown_experiment(workspace):
     cfg = _auth_cfg(workspace)
     assert runner.invoke(app, ["--config", cfg, "analyze", "-r", "EXP-999"]).exit_code == 2
+
+
+def test_run_stores_telemetry_status(workspace):
+    cfg = _auth_cfg(workspace)
+    runner.invoke(app, ["--config", cfg, "run", "-s", "SC-001"])
+    from endpoint_framework.storage import Database
+    db = Database(workspace / "experiments" / "framework.db")
+    r = db.runs_for("EXP-001")[0]
+    assert r.telemetry_status == "source_unavailable"  # off Windows, honestly
+    db.close()
+
+
+def test_benchmark_compares_three_strategies(workspace):
+    cfg = _auth_cfg(workspace)
+    runner.invoke(app, ["--config", cfg, "train", "-e", "40"])
+    r = runner.invoke(app, ["--config", cfg, "benchmark"])
+    assert r.exit_code == 0, r.output
+    for mode in ("fixed", "random", "adaptive"):
+        assert mode in r.output
+    import json
+    data = json.loads((workspace / "outputs/reports/benchmark.json").read_text())
+    assert set(data) == {"fixed", "random", "adaptive"}
+    assert (workspace / "outputs/reports/benchmark.png").is_file()
+
+
+def test_benchmark_needs_checkpoint(workspace):
+    cfg = _auth_cfg(workspace)
+    r = runner.invoke(app, ["--config", cfg, "benchmark"])
+    assert r.exit_code == 2 and "No DQN checkpoint" in r.output

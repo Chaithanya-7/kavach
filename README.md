@@ -41,6 +41,8 @@ Run `framework doctor` from an elevated PowerShell to see the Security event log
 | `framework evaluate --mode adaptive/random/fixed` | Evaluate a strategy — _pending Stage 6_ |
 | `framework analyze --run EXP-XXX` | Metrics + SHAP + K-means — _pending Stage 7_ |
 | `framework report --run EXP-XXX` | Exports + figures — _pending Stage 8_ |
+| `framework benchmark` | Run fixed/random/adaptive and compare coverage efficiency |
+| `framework evaluate --mode M` executes real scenarios; runs now store real telemetry status ||
 | `--config PATH`, `-v` | Alternate config (or `$env:FRAMEWORK_CONFIG`), verbose console logs |
 
 Logs: JSON lines in `outputs/logs/framework.jsonl`.
@@ -54,6 +56,6 @@ Logs: JSON lines in `outputs/logs/framework.jsonl`.
 - [x] Stage 5 — DQN: trainable PyTorch agent on simulated feedback, beats random baseline, checkpoints
 - [x] Stage 6 — Adaptive orchestration: `evaluate --mode adaptive|random|fixed` executes real scenarios in the strategy's order; adaptive order comes from the trained DQN
 - [x] Stage 7 — SHAP (GradientExplainer) + K-means (honest "not meaningful" with too few experiments)
-- [x] Stage 8 — Reporting: CSV/JSON exports + matplotlib figures (training curve, coverage)
+- [x] Stage 8 — Reporting: CSV/JSON exports + matplotlib figures (training curve, coverage); `benchmark` compares fixed/random/adaptive (steps-to-full-coverage + chart)
 
 Verified on Linux (71 tests). Windows-specific paths (event logs, registry/schtask execution) are **not yet run on a real Windows 11 host**. Results from `train` are **simulated feedback**, labelled as such.
