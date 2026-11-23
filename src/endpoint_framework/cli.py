@@ -210,9 +210,12 @@ def _execute_experiment(loaded: LoadedConfig, profile_name: str, targets: list) 
             rows.append((sc, res, dur))
 
         db.set_state(exp.id, ExperimentState.COLLECTING)
+        # query each Windows event channel once per experiment, not once per scenario
+        from endpoint_framework.telemetry.collector import CHANNELS, collect
+        collected = {name: collect(name) for name in CHANNELS}
         feedback_records = []
         for sc, res, dur in rows:
-            fb = process_feedback(exp.id, sc, res.status)
+            fb = process_feedback(exp.id, sc, res.status, collected=collected)
             feedback_records.append(fb.to_dict())
             db.add_scenario_run(ScenarioRun(
                 experiment_id=exp.id, scenario_id=sc.id, status=res.status,

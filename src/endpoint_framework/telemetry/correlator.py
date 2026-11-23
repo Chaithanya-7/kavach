@@ -21,13 +21,18 @@ _ORDER = [
 ]
 
 
-def telemetry_for(scenario: Scenario, max_events: int = 50) -> tuple[str, int, str]:
-    """Return (telemetry_status, channel_event_count, note) for a scenario's sources."""
+def telemetry_for(scenario: Scenario, max_events: int = 50, collected: dict | None = None) -> tuple[str, int, str]:
+    """Return (telemetry_status, channel_event_count, note) for a scenario's sources.
+
+    ``collected`` lets the caller pass channel results gathered once per experiment,
+    so the same event channels are not re-queried for every scenario.
+    """
     sources = sorted({e.source for e in scenario.expected_events})
     if not sources:
         return TelemetryStatus.NOT_OBSERVED.value, 0, "scenario defines no expected telemetry sources"
 
-    results = [collect(src, max_events=max_events) for src in sources]
+    results = [collected[src] if collected and src in collected else collect(src, max_events=max_events)
+               for src in sources]
     by_status = {r.status for r in results}
     # best available status across the scenario's sources
     status = next((s.value for s in _ORDER if s.value in by_status), TelemetryStatus.COLLECTION_FAILURE.value)

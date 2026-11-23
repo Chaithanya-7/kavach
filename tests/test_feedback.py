@@ -40,3 +40,22 @@ def test_feedback_reward_ranks_information():
     assert feedback_reward(fb("completed", "not_observed")) == 0.0
     assert feedback_reward(fb("completed", "source_unavailable")) == -0.25
     assert feedback_reward(fb("failed", "observed")) == -1.0
+
+
+def test_collected_cache_avoids_recollection(monkeypatch):
+    # with a pre-collected cache, process_feedback must not call collect() again
+    import endpoint_framework.telemetry.feedback as fb_mod
+    import endpoint_framework.telemetry.correlator as corr
+    from endpoint_framework.telemetry.collector import CHANNELS, CollectionResult
+
+    calls = {"n": 0}
+    def boom(*a, **k):
+        calls["n"] += 1
+        return CollectionResult("x", "source_unavailable")
+    monkeypatch.setattr(fb_mod, "collect", boom)
+    monkeypatch.setattr(corr, "collect", boom)
+
+    collected = {name: CollectionResult(name, "not_observed") for name in CHANNELS}
+    fb = process_feedback("E", get_scenario("SC-001"), "completed", collected=collected)
+    assert calls["n"] == 0  # everything served from the cache
+    assert fb.telemetry_status in {"not_observed", "source_unavailable"}

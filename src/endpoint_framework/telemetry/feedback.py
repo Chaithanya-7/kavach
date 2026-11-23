@@ -46,9 +46,11 @@ def _outcome(expected_alert: bool, alert_observed: bool, alert_known: bool) -> s
     return "no_alert_as_expected"         # benign activity, no alert: the normal case
 
 
-def process_feedback(experiment_id: str, scenario: Scenario, execution_status: str) -> ScenarioFeedback:
-    tel_status, event_count, _ = telemetry_for(scenario)
-    defender = collect("Defender")
+def process_feedback(
+    experiment_id: str, scenario: Scenario, execution_status: str, collected: dict | None = None
+) -> ScenarioFeedback:
+    tel_status, event_count, _ = telemetry_for(scenario, collected=collected)
+    defender = collected["Defender"] if collected and "Defender" in collected else collect("Defender")
     alert_known = defender.status in (TelemetryStatus.OBSERVED.value, TelemetryStatus.NOT_OBSERVED.value)
     alert_observed = defender.status == TelemetryStatus.OBSERVED.value and defender.count > 0
     confidence = "observed" if tel_status == TelemetryStatus.OBSERVED.value else "inconclusive"
