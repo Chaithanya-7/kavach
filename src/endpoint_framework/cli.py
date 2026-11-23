@@ -65,7 +65,32 @@ def _load(ctx: typer.Context) -> LoadedConfig:
         raise typer.Exit(code=2)
     log_file = loaded.resolve(loaded.config.logging.file) if loaded.source else None
     setup_logging(loaded.config.logging.level, log_file, ctx.obj["verbose"])
+    from endpoint_framework.scenarios.registry import ScenarioConfigError, load_user_scenarios
+    try:
+        load_user_scenarios(loaded.root / "configs" / "scenarios.yaml")
+    except ScenarioConfigError as e:
+        err_console.print(f"[red]Scenario config error:[/red] {e}")
+        raise typer.Exit(code=2)
     return loaded
+
+
+_SCENARIOS_TEMPLATE = """\
+# Additional non-destructive scenarios, loaded on top of the built-in catalog.
+# Each entry follows the Scenario schema; ids must not clash with built-ins (SC-0xx).
+# A scenario defined here that has no registered executor is reported as 'skipped'.
+# Example (uncomment and adapt):
+#
+# - id: SC-100
+#   name: Custom file read
+#   description: Read a benign file to study file-access telemetry.
+#   layer: user_mode
+#   mitre_attack: T1005
+#   expected_events:
+#     - source: Sysmon
+#       event_id: 11
+#       description: FileCreate/Access for the target
+#   cleanup: none required
+"""
 
 
 @app.command()
@@ -81,6 +106,11 @@ def init(
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg_path.write_text(default_config_yaml(), encoding="utf-8")
         console.print(f"[green]Wrote[/green] {cfg_path}")
+
+    scen_path = cfg_path.parent / "scenarios.yaml"
+    if not scen_path.exists() or force:
+        scen_path.write_text(_SCENARIOS_TEMPLATE, encoding="utf-8")
+        console.print(f"[green]Wrote[/green] {scen_path}")
 
     ctx.obj["config_path"] = cfg_path
     loaded = _load(ctx)
@@ -547,9 +577,11 @@ app.add_typer(scenarios_app, name="scenarios")
 
 @scenarios_app.command("list")
 def scenarios_list(
+    ctx: typer.Context,
     layer: Optional[Layer] = typer.Option(None, "--layer", "-l", help="Filter by Windows execution layer."),
 ) -> None:
-    """List scenarios in the catalog."""
+    """List scenarios in the catalog (built-in plus configs/scenarios.yaml)."""
+    _load(ctx)
     items = list_scenarios(layer)
     t = Table(title=f"Scenario catalog ({len(items)})")
     t.add_column("ID", style="bold")
@@ -562,8 +594,12 @@ def scenarios_list(
 
 
 @scenarios_app.command("info")
-def scenarios_info(scenario_id: str = typer.Argument(..., help="Scenario id, e.g. SC-001.")) -> None:
+def scenarios_info(
+    ctx: typer.Context,
+    scenario_id: str = typer.Argument(..., help="Scenario id, e.g. SC-001."),
+) -> None:
     """Show the full definition of one scenario."""
+    _load(ctx)
     try:
         s = get_scenario(scenario_id.upper())
     except ScenarioError:
