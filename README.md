@@ -53,6 +53,7 @@ Logs: JSON lines in `outputs/logs/framework.jsonl`.
 - [x] Stage 1 — Foundation: package, config validation, structured logging, `init`/`status`/`doctor`, tests
 - [x] Stage 2 — Core orchestration: experiment model + lifecycle state machine, SQLite storage
 - [x] Stage 3 — Controlled Windows scenarios: non-destructive executor (process/file/registry/schtask/TCP/DNS/service), Windows-only steps skip honestly off Windows
+- [x] Module 5 — EDR Feedback Processing: normalized feedback schema separating expected vs observed detection; real-feedback reward; `run` emits a Detection column + feedback.json
 - [~] Stage 4 — Telemetry: Sysmon/Security/Defender collector + normalizer (Windows-only; **unverified on a real host**)
 - [x] Stage 5 — DQN: trainable PyTorch agent on simulated feedback, beats random baseline, checkpoints
 - [x] Stage 6 — Adaptive orchestration: `evaluate --mode adaptive|random|fixed` executes real scenarios in the strategy's order; adaptive order comes from the trained DQN

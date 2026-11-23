@@ -200,28 +200,37 @@ def _execute_experiment(loaded: LoadedConfig, profile_name: str, targets: list) 
         t.add_column("Duration")
         t.add_column("Detail")
         style = {"completed": "green", "failed": "red", "skipped": "yellow"}
-        from endpoint_framework.telemetry.correlator import telemetry_for
+        from endpoint_framework.telemetry.feedback import process_feedback
 
         t.add_column("Telemetry")
+        t.add_column("Detection")
         rows = []
         for sc in targets:
             res, dur = execute(sc, workspace)
             rows.append((sc, res, dur))
 
         db.set_state(exp.id, ExperimentState.COLLECTING)
+        feedback_records = []
         for sc, res, dur in rows:
-            tel_status, tel_count, _ = telemetry_for(sc)
+            fb = process_feedback(exp.id, sc, res.status)
+            feedback_records.append(fb.to_dict())
             db.add_scenario_run(ScenarioRun(
                 experiment_id=exp.id, scenario_id=sc.id, status=res.status,
                 ended_at=datetime.now(timezone.utc).isoformat(), duration_s=round(dur, 4),
-                detail=res.detail, telemetry_status=tel_status, event_count=tel_count,
+                detail=res.detail, telemetry_status=fb.telemetry_status, event_count=fb.event_count,
             ))
             t.add_row(sc.id, f"[{style[res.status]}]{res.status}[/]", f"{dur:.3f}s",
-                      res.detail[:48], tel_status)
+                      res.detail[:40], fb.telemetry_status, fb.detection_outcome)
         console.print(t)
 
+        import json
+        reports = loaded.resolve(loaded.config.paths.outputs_dir) / "reports"
+        reports.mkdir(parents=True, exist_ok=True)
+        (reports / f"{exp.id}_feedback.json").write_text(json.dumps(feedback_records, indent=2), encoding="utf-8")
+
         db.set_state(exp.id, ExperimentState.COMPLETED)
-        console.print(f"[green]Stored[/green] {exp.id} (state COMPLETED).")
+        console.print(f"[green]Stored[/green] {exp.id} (state COMPLETED). Feedback: "
+                      f"{reports / (exp.id + '_feedback.json')}")
         return exp
     except Exception:
         if exp is not None:

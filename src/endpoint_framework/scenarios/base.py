@@ -45,3 +45,6 @@ class Scenario(BaseModel):
     cleanup: str = "none required"
     success_criteria: str = "scenario actions complete without error"
     destructive: bool = False  # the registry rejects any scenario that sets this true
+    # Expected detection outcome, defined separately from observed behavior. Benign scenarios
+    # are not expected to raise an EDR alert; a surfaced alert is then a notable deviation.
+    expected_alert: bool = False
